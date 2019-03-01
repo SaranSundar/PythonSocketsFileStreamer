@@ -1,0 +1,8 @@
+
+# Pycharm folder
+venv/
+.idea/
+
+# ???
+__pycache__/serveFrame.cpython-36.pyc
+

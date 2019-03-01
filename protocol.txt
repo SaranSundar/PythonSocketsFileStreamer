@@ -1,0 +1,287 @@
+
+			   =====   BAGS Protocol Specification   =====
+
+
+-=-=-=-=--=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  Abstract
+-=-=-=-=--=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+	The BAGS (Boerwinkle Asawa Gupta Sundararajan) protocol is an application-level protocol
+	for intercommunication of controller, renderer, and server systems for file-streaming
+	services. It is a stateless protocol in that no messages sent using the BAGS protocol
+	require preexisting information about the sender or receiver to be provided; it is the
+	responsibility of the receiver in all instances to behave and respond to incoming
+	messages elegantly and efficiently.
+
+	The BAGS protocol is inspired by the organization of HTTP via a header-based structure.
+	A variety of related but functionally independent operations can be signaled between
+	receivers via two mandatory headers as will be described below.
+
+	The following specification describes BAGS v1.0 only, and all support for BAGS will be
+	terminated December 4th, 2018. This is NOT an LTS build, and will not be treated as such.
+
+
+
+-=-=-=-=--=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  Message Structure
+-=-=-=-=--=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+	Every message sent through the BAGS protocol is constructed with two mandatory headers, a
+	COMMAND header and a CODE header, followed by a blank line and then a payload. Some headers
+	inherently require additional headers to be present. All supported headers alongside
+	documentation are as follows:
+
+
+	Header: COMMAND
+	-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=
+	The COMMAND header defines the functionality class of a message made by any of the three
+	host roles. This header is mandatory and any message constructed that does not contain
+	a COMMAND header is considered invalid and a violation of standard BAGS protocol. The
+	COMMAND header must be specified with exactly one of the following three supported
+	command types:
+		   List		Fetches currently streamable files
+		Control		Directs the current state of a renderer host
+		 Stream		Obtains the next data chunk needed in an active file stream
+		 [else]		indicates this message in invalid/erroneous/corrupted and should
+				be discarded and ignored by any receiving host
+
+
+		COMMAND: List
+		The List header should be used to contain messages that are in relation to the
+		available streamable contents hosted on a BAGS equipped server. All hosts
+		conforming to the BAGS specification are expected to support a List message in some
+		capacity. In controller hosts, List requests are constructed and responses are
+		received. In server hosts, List responses are constructed and requests are
+		received. In any scenario not described above, List error messages are sent in
+		response to any incoming List messages.
+
+		No List messages require additional headers aside from the CODE header.
+		
+		List request messages may transmit a null payload; it will be ignored regardless.
+		
+		List response messages should transmit the resulting file manifest as the message
+		payload in a human readable format, such that no post-processing is required to
+		display the contained information to a user.
+
+
+		COMMAND: Control
+		The Control header should be used to contain messages that in relation to the
+		available real-time file-streaming controls supported by a BAGS equipped renderer
+		host. All hosts conforming to the BAGS specification are expected to support a
+		Control message in some capacity. In controller hosts, Control requests are
+		constructed and responses are received. In renderer hosts, Control responses are
+		constructed and requests are received. In any scenario not described above, Control
+		error messages are sent in response to any incoming Control messages.
+		
+		Control request messages must contain two headers in addition to the CODE header:
+		the FUNCTION and FILE header, as described below. No payload is required.
+
+		Control response messages shall not contain additional headers. Furthermore, any
+		attached payload will be ignored.
+
+
+		COMMAND: Stream
+		The Stream header should be used to contain messages that in relation to the 
+		available file-streaming capabilities supported by a BAGS equipped server at a
+		transmission rate supported by a BAGS equipped renderer via network input. All
+		hosts conforming to the BAGS specification are expected to support a Stream message
+		in some capacity. In renderer hosts, Stream requests are constructed and responses
+		are received. In server hosts, Stream responses are constructed and requests are
+		received. In any scenario not described above, Stream error messages are sent in
+		response to any incoming Stream messages.
+
+		Stream request messages must contain two headers in addition to the CODE header:
+		the FILE and OFFSET header, as described below. No payload is required.
+
+		Stream response messages shall not contain additional headers. A payload must be
+		attached containing the next data chunk of the requested file; this payload can be
+		transmitted as human-readable ASCII text or some binary format depending on the
+		file specified by the corresponding Stream request's FILE header. A Stream response
+		payload may be null if and only if the file has already been read to completion and
+		there is no data remaining in sequence in the file to be sent.
+
+
+
+	Header: CODE
+	-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=
+	The CODE header defines the communication context class of a message made by any of the
+	three host roles. This header is mandatory and any message constructed that does not
+	contain a CODE header is considered invalid and a violation of standard BAGS protocol. The
+	COMMAND header line must immediately proceed the CODE header line. The CODE header field
+	is succeeded by a keyword denoting the context of the message as exactly one of the
+	following three supported codes:
+		-1	indicates this message is an error response to an unexpected message such
+			as an unexpected response message or a host receiving a message it should
+		 0	indicates this message is an initiating communication request
+		 1	indicates this message is in response to a valid/expected message
+	    [else]	indicates this message in invalid, erroneous, or corrupted and should be
+			discarded and ignored by any receiving host
+
+
+		CODE: -1
+		A CODE value of negative indicates that the host has received a message that is
+		structured properly but the receiving host is unaware of how to process it. This
+		situation may arise if the a host receives a response message before a matching
+		response message. This also may occur if the receiving host is not equipped to
+		handle an incoming message, such as if a controller host receives a Stream message.
+
+		
+		CODE: 0
+		A CODE value of zero indicates that the host is sending a request message to
+		another host. Every interaction between any two hosts will begin with a transmitted
+		CODE 0 message; it should be returned with a CODE 1 message if the destination host
+		is equipped to process the particular type of request.
+
+
+		CODE: 1
+		A CODE value of one indicates a response to a request message. This response
+		message may be a minimally filled message used simply as an acknowledgement packet
+		though they may also be used to transmit data. Response messages are sent after
+		request messages were received, back to the source of the request, unless the
+		situation matches one warranting a CODE -1 instead.
+
+
+	
+	HEADER: FUNCTION
+	-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=
+	The FUNCTION header is associated with Control Request messages. This header must be present
+	in Control Request situations and must be absent in all other messages. The FUNCTION header
+	value will immediately follow the CODE header in Control Request messages. Possible values
+	for this header are:
+		  Play		Indicates that the renderer should begin streaming a file from the
+				beginning. A Play function must be accompanied by a FILE header
+				immediately afterwards. The renderer receiving this message will
+				begin streaming the indicated file in the FILE header's location,
+				unconditional of the renderer's current file or file offset.
+		 Pause		Indicates that the renderer should stop streaming the current file
+				from the server. If followed by a Resume request, the renderer
+				will continue streaming the current file, as if uninterrupted. If
+				a Pause request is received when there is no file currently being
+				streamed, this message has no additional effect.
+		Resume		Indicates that the renderer should continue streaming the current
+		        file, resuming from the same offset that it was last at. These
+				messages are typically received after a Pause request. If a Pause
+				is received when there is no file currently being streamed, this
+				message has no additional effect.
+		[else]		This message has been sent in error or has been corrupted. An error
+				message should be returned.
+	
+	Note that in all situations, a Control response message is expected in return from the
+	renderer.
+
+
+
+	HEADER: FILE
+	-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=
+	The FILE header follows the FUNCTION header when the value of the FUNCTION header is 'Play'.
+	This header's value is one string that represents the filename that is to be streamed from
+	the server to the renderer. This header will be absent in all other Control message formats
+	and scenarios; the renderer must maintain internal state information about the current file,
+	streaming status, and streaming file offset to process Pause and Resume functions.
+
+	The FILE header also instead follows the CODE header if the message has thus far been
+	determined to be a Stream request message. Similarly, this header's value is one string that
+	represents the filename that is to be streamed from the server to the renderer. This header
+	will be absent in all other Stream message formats and scenarios.
+
+
+
+	HEADER: OFFSET
+	-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=
+	The OFFSET header is a final mandatory header following the FILE header that contains an
+	integer value. This integer value notifies the server of what portion of the file will
+	be contained in the payload of the Stream response message after a renderer transmits a
+	Stream request message.
+
+	For text files, the offset number indicates a line number within the file. The server is
+	to include the entirety of that line, but that line only and no information of the
+	surrounding lines in the payload.
+
+
+
+
+-=-=-=-=--=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  Sample Message Transmission and Exchange
+-=-=-=-=--=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+	Suppose that in a simple network, a single controller host, server host, and renderer host
+	are interconnected such that the host machines can ping each other with minimal delay and
+	no interferences. Assume that all hosts have established a connection with each other for
+	their respective functionalities.
+
+	Initially, the controller host may request a manifest of the files available to be streamed
+	from the server. The controller will transmit the following message to the server:
+	
+		List\n
+		0\n
+
+	Upon receiving the List Request message, the server will respond to the controller with a
+	List Response containing the file manifest as the payload:
+
+		List\n
+		1\n
+		\n
+		textfile.txt\n
+		audiofile.wav\n
+		videofile.mp4\n
+
+	The controller will deliver the received file manifest to the user for viewing. At some
+	point in time, the user may desire to begin streaming a file for view on the renderer. To
+	do so, the controller will transmit a Control Request message to the renderer. Consider one
+	such message for the file 'textfile.txt' via the sample file manifest above:
+
+		Control\n
+		0\n
+		Play\n
+		textfile.txt\n
+		
+	Upon receiving the Control Request message, the renderer first acknowledge that the message
+	had been received by sending a message such as the following back to the controller:
+
+		Control\n
+		1\n
+
+	The renderer will internally manage whether or not the chosen file had already been playing,
+	and will adjust the Stream Request accordingly. Suppose the renderer has either not been
+	streaming 'textfile.txt' or has just completed streaming 'textile.txt'. In both cases, the
+	renderer will request the first line of the file from the server:
+
+		Stream\n
+		0\n
+		textfile.txt\n
+		0\n
+
+	The server will return a Stream Response to the renderer containing the contents of data
+	chunk 0, which for text files, indicates the contents of line 0:
+
+		Stream\n
+		1\n
+		\n
+		This is the first line of text of a sample text file. Line two will follow...\n
+
+	The renderer, when receiving this message, will display this information to the user. It
+	will then automatically transmit a following Stream Request for the next data chunk. For
+	text files, this is treated using line numbers, which will increment through one stream:
+
+		Stream\n
+		0\n
+		textfile.txt\n
+		1\n
+		
+	Similarly the server will respond:
+
+		Stream\n
+		1\n
+		\n
+		This is the second line of the text file! Unfortunately, there is no third line.
+
+	The renderer will continually increment the offset of the request. At some point, the end
+	of the file may be encountered, so the server will send a Stream Response with a null
+	payload:
+
+		Stream\n
+		1\n
+		
+	This notifies the receiving renderer that the indicated offset has exceeded the length of
+	the file. Further Stream Requests of excessive offsets will be responded to with a similar
+	Stream Response with a null payload. Ideally, the renderer will notify the user that the
+	file has ended and will stop transmitting Stream Requests, though this is beyond the scope
+	of BAGS protocol specification.
